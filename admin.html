@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Subber — 凭据管理</title>
+<style>
+:root {
+  --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --sub: #86868b;
+  --blue: #0071e3; --red: #ff3b30; --green: #34c759; --border: #d1d1d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --sub: #98989d;
+    --border: #48484a;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  background: var(--bg); color: var(--text);
+  display: flex; justify-content: center; padding: 60px 20px; min-height: 100vh;
+}
+.container { max-width: 520px; width: 100%; }
+h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+p.sub { font-size: 14px; color: var(--sub); margin-bottom: 24px; }
+.card {
+  background: var(--card); border-radius: 14px; padding: 24px; margin-bottom: 14px;
+}
+label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; margin-top: 14px; }
+label:first-child { margin-top: 0; }
+input, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 13px; font-family: inherit;
+  background: var(--bg); color: var(--text);
+}
+input:focus, textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,113,227,.15); }
+.hint { font-size: 11px; color: var(--sub); margin-top: 3px; }
+button {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 18px;
+  background: var(--blue); color: #fff; transition: opacity .2s;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.status {
+  margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;
+}
+.status.success { display: block; background: rgba(52,199,89,.1); color: var(--green); }
+.status.error { display: block; background: rgba(255,59,48,.1); color: var(--red); }
+
+/* ── Password gate ── */
+#gate { text-align: center; padding: 40px 0; }
+#gate input { text-align: center; font-size: 18px; max-width: 260px; letter-spacing: 4px; }
+#gate button { max-width: 260px; margin: 16px auto 0; }
+
+/* ── Main form ── */
+#main { display: none; }
+
+/* ── Platform key rows ── */
+.pk-row { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
+.pk-row input { flex: 1; }
+.pk-row button {
+  width: 28px; height: 28px; min-width: 28px; padding: 0; margin: 0;
+  font-size: 16px; line-height: 1; border-radius: 50%; background: var(--red);
+}
+.add-row { margin-top: 10px; text-align: right; }
+.add-row button {
+  width: auto; padding: 6px 14px; margin: 0; font-size: 12px; background: var(--bg);
+  color: var(--blue); border: 1px dashed var(--blue);
+}
+
+/* ── Preview ── */
+pre { background: var(--bg); border-radius: 8px; padding: 14px; font-size: 11px; overflow-x: auto; max-height: 200px; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Video Subber 凭据管理</h1>
+  <p class="sub">更新百度翻译和 LLM 平台 Key。加密后自动提交到公开仓库。</p>
+
+  <!-- ══════════ Password Gate ══════════ -->
+  <div class="card" id="gate">
+    <label>管理密码</label>
+    <input type="password" id="adminPassword" placeholder="请输入管理密码" autocomplete="off">
+    <button onclick="unlock()">进入</button>
+    <div class="status" id="gateError"></div>
+  </div>
+
+  <!-- ══════════ Main Form ══════════ -->
+  <div id="main">
+    <div class="card">
+      <label>百度翻译 APP ID</label>
+      <input type="text" id="baiduAppId" placeholder="从百度翻译开放平台获取">
+      <label>百度翻译 Secret</label>
+      <input type="text" id="baiduSecret" placeholder="从百度翻译开放平台获取">
+
+      <label style="margin-top:20px">LLM 平台 Key（SVIP 用户使用）</label>
+      <div class="hint">每个平台一条。platform 填 claude / gpt / gemini / deepseek / doubao / glm</div>
+      <div id="pkContainer">
+        <div class="pk-row">
+          <input type="text" class="pk-platform" placeholder="platform" style="flex:1">
+          <input type="text" class="pk-name" placeholder="显示名称" style="flex:2">
+          <input type="text" class="pk-key" placeholder="API Key" style="flex:3">
+        </div>
+      </div>
+      <div class="add-row"><button onclick="addPKRow()">+ 添加平台</button></div>
+
+      <button id="saveBtn" onclick="encryptAndSave()">加密并保存到 GitHub</button>
+      <label style="font-weight:400;font-size:12px;color:var(--sub);margin-top:8px;">
+        <input type="checkbox" id="forceOverwrite"> 确认覆盖（覆盖前请确保凭据正确，否则将导致用户翻译服务中断）
+      </label>
+      <div class="status" id="status"></div>
+      <pre id="preview"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// Fernet key — must match backend/credential_manager.py
+// ═══════════════════════════════════════════════════════════
+const FERNET_KEY_B64 = "V_wo1jL853wjdIxBba_j2o4KhAC8A_82JYr1rZUFzM4=";
+const ADMIN_PASSWORD = "ANDY";
+const REPO_OWNER = "andy-sherlock";
+const REPO_NAME = "video-subber-config";
+const FILE_PATH = "credentials.json";
+const GITHUB_TOKEN = "";  // 留空：打包时需填入 GitHub Fine-grained Token
+
+// ═══════════════════════════════════════════════════════════
+// Gate
+// ═══════════════════════════════════════════════════════════
+function unlock() {
+  const pw = document.getElementById('adminPassword').value;
+  if (pw.toUpperCase() === ADMIN_PASSWORD.toUpperCase()) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('main').style.display = 'block';
+    document.getElementById('gateError').className = 'status';
+  } else {
+    const e = document.getElementById('gateError');
+    e.textContent = '密码错误';
+    e.className = 'status error';
+    setTimeout(() => e.className = 'status', 2000);
+  }
+}
+document.getElementById('adminPassword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') unlock();
+});
+
+// ═══════════════════════════════════════════════════════════
+// PK rows
+// ═══════════════════════════════════════════════════════════
+function addPKRow() {
+  const container = document.getElementById('pkContainer');
+  const row = document.createElement('div');
+  row.className = 'pk-row';
+  row.innerHTML = `
+    <input type="text" class="pk-platform" placeholder="platform" style="flex:1">
+    <input type="text" class="pk-name" placeholder="显示名称" style="flex:2">
+    <input type="text" class="pk-key" placeholder="API Key" style="flex:3">
+    <button onclick="this.parentElement.remove()" title="删除">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Fernet encrypt (Web Crypto API)
+// ═══════════════════════════════════════════════════════════
+function base64urlToBytes(b64) {
+  return Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
+}
+function bytesToBase64url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function bytesToHex(buf) {
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function fernetEncrypt(plaintext, keyB64) {
+  const keyBytes = base64urlToBytes(keyB64);
+  // Fernet: first 16 bytes = AES key, last 16 bytes = HMAC key
+  const aesKey = await crypto.subtle.importKey('raw', keyBytes.slice(0, 16),
+    { name: 'AES-CBC' }, false, ['encrypt']);
+  const hmacKey = await crypto.subtle.importKey('raw', keyBytes.slice(16, 32),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+  const timestamp = new Uint8Array(8);
+  // Big-endian 64-bit timestamp (seconds since 1970)
+  const ts = BigInt(Math.floor(Date.now() / 1000));
+  for (let i = 7; i >= 0; i--) { timestamp[7-i] = Number((ts >> BigInt(i*8)) & 0xFFn); }
+
+  const encoder = new TextEncoder();
+  const plainBytes = encoder.encode(plaintext);
+
+  // PKCS7 padding
+  const blockSize = 16;
+  const padLen = blockSize - (plainBytes.length % blockSize);
+  const padded = new Uint8Array(plainBytes.length + padLen);
+  padded.set(plainBytes);
+  padded.fill(padLen, plainBytes.length);
+
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, aesKey, padded);
+
+  // Build token: version(1) + timestamp(8) + iv(16) + ciphertext
+  const token = new Uint8Array(1 + 8 + 16 + ciphertext.byteLength);
+  token[0] = 0x80;
+  token.set(timestamp, 1);
+  token.set(iv, 9);
+  token.set(new Uint8Array(ciphertext), 25);
+
+  // HMAC
+  const sig = await crypto.subtle.sign('HMAC', hmacKey, token);
+
+  // Final: token + hmac
+  const result = new Uint8Array(token.length + sig.byteLength);
+  result.set(token);
+  result.set(new Uint8Array(sig), token.length);
+
+  return bytesToBase64url(result);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Main: encrypt + save
+// ═══════════════════════════════════════════════════════════
+async function encryptAndSave() {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('saveBtn');
+  const preview = document.getElementById('preview');
+  const force = document.getElementById('forceOverwrite').checked;
+
+  if (!force) {
+    status.textContent = '请先勾选「确认覆盖」复选框';
+    status.className = 'status error';
+    return;
+  }
+  if (!GITHUB_TOKEN) {
+    status.textContent = 'GITHUB_TOKEN 未配置，请在 admin.html 代码中填入 GitHub Token。';
+    status.className = 'status error';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '加密中…';
+  status.className = 'status';
+
+  try {
+    const baiduId = document.getElementById('baiduAppId').value.trim();
+    const baiduSecret = document.getElementById('baiduSecret').value.trim();
+
+    // Collect platform keys
+    const rows = document.querySelectorAll('#pkContainer .pk-row');
+    const platformKeys = [];
+    rows.forEach(row => {
+      const platform = row.querySelector('.pk-platform').value.trim();
+      const name = row.querySelector('.pk-name').value.trim();
+      const key = row.querySelector('.pk-key').value.trim();
+      if (platform && key) platformKeys.push({ platform, name: name || platform, key });
+    });
+
+    // Build encrypted payload
+    const encrypted = {};
+    if (baiduId && baiduSecret) {
+      encrypted.baidu = {
+        app_id: await fernetEncrypt(baiduId, FERNET_KEY_B64),
+        secret: await fernetEncrypt(baiduSecret, FERNET_KEY_B64),
+      };
+    }
+    if (platformKeys.length > 0) {
+      encrypted.platform_keys = [];
+      for (const pk of platformKeys) {
+        encrypted.platform_keys.push({
+          platform: pk.platform,
+          name: pk.name,
+          key: await fernetEncrypt(pk.key, FERNET_KEY_B64),
+        });
+      }
+    }
+
+    const payload = JSON.stringify(encrypted, null, 2);
+    preview.style.display = 'block';
+    preview.textContent = payload;
+
+    btn.textContent = '正在提交到 GitHub…';
+
+    // Get current file SHA (needed for update)
+    let sha = null;
+    try {
+      const getResp = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`,
+        { headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
+      );
+      if (getResp.ok) {
+        const data = await getResp.json();
+        sha = data.sha;
+      }
+    } catch (e) { /* file may not exist yet */ }
+
+    // Commit the file
+    const commitResp = await fetch(
+      `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `token ${GITHUB_TOKEN}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github.v3+json',
+        },
+        body: JSON.stringify({
+          message: '更新加密凭据',
+          content: btoa(unescape(encodeURIComponent(payload))),
+          ...(sha ? { sha } : {}),
+        }),
+      }
+    );
+
+    if (commitResp.ok) {
+      status.textContent = '已保存。所有用户下次启动软件时自动生效。';
+      status.className = 'status success';
+    } else {
+      const err = await commitResp.json();
+      status.textContent = `提交失败: ${err.message}`;
+      status.className = 'status error';
+    }
+  } catch (e) {
+    status.textContent = `出错: ${e.message}`;
+    status.className = 'status error';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '加密并保存到 GitHub';
+}
+</script>
+</body>
+</html>
