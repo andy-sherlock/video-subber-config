@@ -84,6 +84,11 @@ pre { background: var(--bg); border-radius: 8px; padding: 14px; font-size: 11px;
   <div class="card" id="gate">
     <label>管理密码</label>
     <input type="password" id="adminPassword" placeholder="请输入管理密码" autocomplete="off">
+    <div style="margin-top:14px">
+      <label>GitHub Token</label>
+      <input type="password" id="githubToken" placeholder="首次使用需填入 Token" autocomplete="off" style="letter-spacing:0">
+      <div class="hint"><a href="https://github.com/settings/tokens" target="_blank">创建 Token →</a> 选 video-subber-config 仓库，权限 Contents: Write。Token 只保存在你的浏览器里。</div>
+    </div>
     <button onclick="unlock()">进入</button>
     <div class="status" id="gateError"></div>
   </div>
@@ -126,23 +131,38 @@ const ADMIN_PASSWORD = "ANDY";
 const REPO_OWNER = "andy-sherlock";
 const REPO_NAME = "video-subber-config";
 const FILE_PATH = "credentials.json";
-const GITHUB_TOKEN = "";  // 留空：打包时需填入 GitHub Fine-grained Token
+function getToken() {
+  const fromInput = document.getElementById('githubToken').value.trim();
+  if (fromInput) {
+    localStorage.setItem('vsub_github_token', fromInput);
+    return fromInput;
+  }
+  return localStorage.getItem('vsub_github_token') || '';
+}
 
 // ═══════════════════════════════════════════════════════════
 // Gate
 // ═══════════════════════════════════════════════════════════
 function unlock() {
   const pw = document.getElementById('adminPassword').value;
-  if (pw.toUpperCase() === ADMIN_PASSWORD.toUpperCase()) {
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('main').style.display = 'block';
-    document.getElementById('gateError').className = 'status';
-  } else {
+  if (pw.toUpperCase() !== ADMIN_PASSWORD.toUpperCase()) {
     const e = document.getElementById('gateError');
     e.textContent = '密码错误';
     e.className = 'status error';
     setTimeout(() => e.className = 'status', 2000);
+    return;
   }
+  const token = getToken();
+  if (!token || !token.startsWith('github_pat_')) {
+    const e = document.getElementById('gateError');
+    e.textContent = '请先填入有效的 GitHub Token（以 github_pat_ 开头）';
+    e.className = 'status error';
+    setTimeout(() => e.className = 'status', 2000);
+    return;
+  }
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('main').style.display = 'block';
+  document.getElementById('gateError').className = 'status';
 }
 document.getElementById('adminPassword').addEventListener('keydown', e => {
   if (e.key === 'Enter') unlock();
@@ -236,8 +256,9 @@ async function encryptAndSave() {
     status.className = 'status error';
     return;
   }
-  if (!GITHUB_TOKEN) {
-    status.textContent = 'GITHUB_TOKEN 未配置，请在 admin.html 代码中填入 GitHub Token。';
+  const TOKEN = getToken();
+  if (!TOKEN) {
+    status.textContent = 'GitHub Token 未配置，请刷新页面重新输入。';
     status.className = 'status error';
     return;
   }
@@ -290,7 +311,7 @@ async function encryptAndSave() {
     try {
       const getResp = await fetch(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`,
-        { headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
+        { headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
       );
       if (getResp.ok) {
         const data = await getResp.json();
@@ -304,7 +325,7 @@ async function encryptAndSave() {
       {
         method: 'PUT',
         headers: {
-          Authorization: `token ${GITHUB_TOKEN}`,
+          Authorization: `token ${TOKEN}`,
           'Content-Type': 'application/json',
           Accept: 'application/vnd.github.v3+json',
         },
